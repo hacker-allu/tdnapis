@@ -22,8 +22,8 @@ module.exports = async function(req, res) {
             error: "Authentication Failed: Missing parameters.",
             message: "You must provide a valid 'key' and an API slug.",
             _provider_info: {
-                developer: "@YourTelegramID", // Change this to your ID
-                official_channel: "@LofzAI_Telegram" // Change this to your Channel
+                developer: "@YourTelegramID", 
+                official_channel: "@LofzAI_Telegram" 
             }
         });
     }
@@ -44,8 +44,19 @@ module.exports = async function(req, res) {
 
         if (verifyData.error) return res.status(403).json({ error: verifyData.error });
 
+        // ---------------------------------------------------------
+        // THE BLANK QUERY INTERCEPTOR
+        // ---------------------------------------------------------
         const qParam = verifyData.query_param || 'query';
         const mainQueryValue = extraParams[qParam] ? encodeURIComponent(extraParams[qParam]) : '';
+
+        // If the query value is completely empty, stop right here.
+        if (!mainQueryValue) {
+            return res.status(400).json({ 
+                error: `No ${qParam} found.` 
+            });
+        }
+        // ---------------------------------------------------------
 
         let fetchUrl = verifyData.target_url;
         if (fetchUrl.includes('[QUERY]')) {
