@@ -1,4 +1,5 @@
 module.exports = async function(req, res) {
+    // 1. Set standard JSON headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -17,9 +18,10 @@ module.exports = async function(req, res) {
     const PHP_BACKEND_URL = "https://lifeatface.in/works/api/verify.php"; 
     const BRIDGE_SECRET = "LOFZ_SECRET_5588"; 
 
+    // ERROR 1: Missing Parameters
     if (!key || !api) {
         return res.status(400).json({ 
-            error: "Authentication Failed: Missing parameters.",
+            error: "Authentication Failed",
             message: "You must provide a valid 'key' and an API slug.",
             _provider_info: {
                 developer: "@YourTelegramID", 
@@ -39,34 +41,30 @@ module.exports = async function(req, res) {
         try {
             verifyData = await verifyReq.json();
         } catch (e) {
+            // ERROR 2: Master Database Down
             return res.status(500).json({ 
                 error: "System Error", 
-                message: "Unable to connect to master database." 
+                message: "Unable to connect to master database. The host may be offline." 
             });
         }
 
+        // ERROR 3: PHP Database Rules (Expired, Deleted, Limit Reached)
         if (verifyData.error) {
-            // Ensure PHP errors also have a message field if they don't already
             return res.status(403).json({ 
                 error: "Access Denied",
                 message: verifyData.error 
             });
         }
 
-        // ---------------------------------------------------------
-        // UPDATED BLANK QUERY INTERCEPTOR
-        // ---------------------------------------------------------
         const qParam = verifyData.query_param || 'query';
         const mainQueryValue = extraParams[qParam] ? encodeURIComponent(extraParams[qParam]) : '';
 
-        // If the query value is completely empty, stop right here and format a clean error.
+        // ERROR 4: Blank Query
         if (!mainQueryValue) {
             const errResponse = { 
                 error: "Missing Query Parameter",
                 message: `No value provided for '${qParam}'. Please include a valid query in the URL.`
             };
-            
-            // Inject branding if available
             if (verifyData.branding && Object.keys(verifyData.branding).length > 0) {
                 errResponse._provider_info = {
                     developer: verifyData.branding.developer,
@@ -75,7 +73,6 @@ module.exports = async function(req, res) {
             }
             return res.status(400).json(errResponse);
         }
-        // ---------------------------------------------------------
 
         let fetchUrl = verifyData.target_url;
         if (fetchUrl.includes('[QUERY]')) {
@@ -95,24 +92,25 @@ module.exports = async function(req, res) {
             }
         }
 
-        // SECURE VENDOR FETCH (No HTML Exposure)
         let upstreamRes;
         try {
             upstreamRes = await fetch(fetchUrl);
         } catch (e) {
+            // ERROR 5: Vendor Timeout
             return res.status(502).json({ 
                 error: "Upstream Error", 
-                message: "Vendor connection timed out." 
+                message: "The vendor connection timed out." 
             });
         }
         
+        // ERROR 6: Vendor API returned a 404 or HTML instead of JSON
         let data;
         try {
             data = await upstreamRes.json();
         } catch(e) {
             return res.status(502).json({
                 error: "Vendor Processing Error",
-                message: "The upstream data provider returned an invalid format. Ensure your query parameters are correct."
+                message: "The upstream data provider returned an invalid format or a Not Found page. Ensure your query is correct."
             });
         }
         
@@ -130,7 +128,7 @@ module.exports = async function(req, res) {
         };
         data = cleanData(data);
 
-        // SLEEK BRANDING INJECTION
+        // Branding
         const branding = verifyData.branding;
         if (branding && Object.keys(branding).length > 0) {
             data._provider_info = {
@@ -142,9 +140,10 @@ module.exports = async function(req, res) {
         return res.status(200).json(data);
 
     } catch (err) {
+        // ERROR 7: Absolute Fallback
         return res.status(500).json({ 
             error: "Gateway Edge Error", 
-            message: "Connection Failed." 
+            message: "A critical connection failure occurred." 
         });
     }
 }
