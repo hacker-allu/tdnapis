@@ -1,5 +1,4 @@
 module.exports = async function(req, res) {
-    // 1. Set standard JSON headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -18,7 +17,6 @@ module.exports = async function(req, res) {
     const PHP_BACKEND_URL = "https://lifeatface.in/works/api/verify.php"; 
     const BRIDGE_SECRET = "LOFZ_SECRET_5588"; 
 
-    // ERROR 1: Missing Parameters
     if (!key || !api) {
         return res.status(400).json({ 
             error: "Authentication Failed",
@@ -41,14 +39,12 @@ module.exports = async function(req, res) {
         try {
             verifyData = await verifyReq.json();
         } catch (e) {
-            // ERROR 2: Master Database Down
             return res.status(500).json({ 
                 error: "System Error", 
                 message: "Unable to connect to master database. The host may be offline." 
             });
         }
 
-        // ERROR 3: PHP Database Rules (Expired, Deleted, Limit Reached)
         if (verifyData.error) {
             return res.status(403).json({ 
                 error: "Access Denied",
@@ -59,7 +55,6 @@ module.exports = async function(req, res) {
         const qParam = verifyData.query_param || 'query';
         const mainQueryValue = extraParams[qParam] ? encodeURIComponent(extraParams[qParam]) : '';
 
-        // ERROR 4: Blank Query
         if (!mainQueryValue) {
             const errResponse = { 
                 error: "Missing Query Parameter",
@@ -92,27 +87,52 @@ module.exports = async function(req, res) {
             }
         }
 
+        // ---------------------------------------------------------
+        // VENDOR FETCH WITH SMART TEXT DETECTOR
+        // ---------------------------------------------------------
         let upstreamRes;
         try {
             upstreamRes = await fetch(fetchUrl);
         } catch (e) {
-            // ERROR 5: Vendor Timeout
             return res.status(502).json({ 
                 error: "Upstream Error", 
                 message: "The vendor connection timed out." 
             });
         }
         
-        // ERROR 6: Vendor API returned a 404 or HTML instead of JSON
+        // 1. Read the raw text first
+        const rawText = await upstreamRes.text();
         let data;
+        
         try {
-            data = await upstreamRes.json();
+            // 2. Try to parse it as JSON
+            data = JSON.parse(rawText);
         } catch(e) {
-            return res.status(502).json({
-                error: "Vendor Processing Error",
-                message: "The upstream data provider returned an invalid format or a Not Found page. Ensure your query is correct."
-            });
+            // 3. If it is NOT JSON, check if it's a short text error (like "Not Found")
+            const cleanText = rawText.trim();
+            const isHtml = cleanText.startsWith('<') || cleanText.toLowerCase().includes('<!doctype');
+            
+            // If it's not HTML and it's less than 150 characters, use their exact text!
+            const dynamicMessage = (!isHtml && cleanText.length > 0 && cleanText.length < 150) 
+                ? cleanText 
+                : "The upstream data provider returned an invalid format. Ensure your query is correct.";
+
+            const errResponse = {
+                error: "Vendor API Error",
+                message: dynamicMessage
+            };
+
+            if (verifyData.branding && Object.keys(verifyData.branding).length > 0) {
+                errResponse._provider_info = {
+                    developer: verifyData.branding.developer,
+                    official_channel: verifyData.branding.channel
+                };
+            }
+
+            // Return a 404 status if the vendor returned a 404, otherwise 502
+            return res.status(upstreamRes.status === 404 ? 404 : 502).json(errResponse);
         }
+        // ---------------------------------------------------------
         
         // Watermark Stripper
         const keysToRemove = verifyData.remove_keys || [];
@@ -140,7 +160,6 @@ module.exports = async function(req, res) {
         return res.status(200).json(data);
 
     } catch (err) {
-        // ERROR 7: Absolute Fallback
         return res.status(500).json({ 
             error: "Gateway Edge Error", 
             message: "A critical connection failure occurred." 
