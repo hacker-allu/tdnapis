@@ -13,6 +13,7 @@ module.exports = async function(req, res) {
     const { key, api: queryApi, ...extraParams } = req.query;
     const api = (pathSlug && pathSlug !== 'api') ? pathSlug : queryApi;
 
+    // ⚠️ PHP HOSTING DOMAIN ⚠️
     const PHP_BACKEND_URL = "https://lifeatface.in/works/api/verify.php"; 
     const BRIDGE_SECRET = "LOFZ_SECRET_5588"; 
 
@@ -20,36 +21,29 @@ module.exports = async function(req, res) {
         return res.status(400).json({ 
             error: "Authentication Failed: Missing parameters.",
             message: "You must provide a valid 'key' and an API slug.",
-            purchase_api_key: "Contact the developer below to purchase an access key.",
-            developer_id: "@YourTelegramID", 
-            official_channel: "@LofzAI_Telegram"
+            _provider_info: {
+                developer: "@YourTelegramID", // Change this to your ID
+                official_channel: "@LofzAI_Telegram" // Change this to your Channel
+            }
         });
     }
 
     try {
-        // 1. PHP DATABASE FETCH (With HTML Detective)
         const verifyReq = await fetch(PHP_BACKEND_URL, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ secret: BRIDGE_SECRET, key, api })
         });
         
-        const verifyText = await verifyReq.text(); // Read as raw text first
         let verifyData;
         try {
-            verifyData = JSON.parse(verifyText); // Try to convert to JSON
+            verifyData = await verifyReq.json();
         } catch (e) {
-            // If it fails, it means PHP returned HTML!
-            return res.status(500).json({ 
-                error: "PHP Database Connection Error", 
-                reason: "The PHP server returned HTML instead of JSON. This is usually caused by hosting bot-protection (like InfinityFree) or a PHP syntax error.",
-                raw_response: verifyText.substring(0, 300) // Show the first 300 characters of the HTML
-            });
+            return res.status(500).json({ error: "System Error: Unable to connect to master database." });
         }
 
         if (verifyData.error) return res.status(403).json({ error: verifyData.error });
 
-        // 2. UPSTREAM VENDOR FETCH
         const qParam = verifyData.query_param || 'query';
         const mainQueryValue = extraParams[qParam] ? encodeURIComponent(extraParams[qParam]) : '';
 
@@ -67,24 +61,25 @@ module.exports = async function(req, res) {
                 }
                 fetchUrl = fetchUrlObj.toString();
             } catch (e) {
-                console.error("URL parsing failed for forwarding queries");
+                // Silent fail
             }
         }
 
-        // 3. VENDOR FETCH (With HTML Detective)
-        const upstreamRes = await fetch(fetchUrl);
-        const upstreamText = await upstreamRes.text(); // Read as raw text first
+        // SECURE VENDOR FETCH (No HTML Exposure)
+        let upstreamRes;
+        try {
+            upstreamRes = await fetch(fetchUrl);
+        } catch (e) {
+            return res.status(502).json({ error: "Upstream Error: Vendor connection timed out." });
+        }
         
         let data;
         try {
-            data = JSON.parse(upstreamText);
+            data = await upstreamRes.json();
         } catch(e) {
-            // If it fails, it means the Vendor API returned HTML (like a 404 page)
             return res.status(502).json({
-                error: "Upstream Vendor Error",
-                reason: "The vendor API returned an HTML webpage instead of JSON. Check if your target URL is correct and your query is not blank.",
-                target_url_attempted: fetchUrl,
-                raw_response: upstreamText.substring(0, 300)
+                error: "Vendor Processing Error",
+                message: "The upstream data provider returned an invalid format. Ensure your query parameters are correct."
             });
         }
         
@@ -102,16 +97,18 @@ module.exports = async function(req, res) {
         };
         data = cleanData(data);
 
-        // Branding
+        // SLEEK BRANDING INJECTION
         const branding = verifyData.branding;
         if (branding && Object.keys(branding).length > 0) {
-            if (branding.show_channel) data.channel = branding.channel;
-            if (branding.show_desc) data.description = branding.description;
+            data._provider_info = {
+                developer: branding.developer,
+                official_channel: branding.channel
+            };
         }
 
         return res.status(200).json(data);
 
     } catch (err) {
-        return res.status(500).json({ error: "Gateway Edge Error", details: err.message });
+        return res.status(500).json({ error: "Gateway Edge Error: Connection Failed." });
     }
 }
