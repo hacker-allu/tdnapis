@@ -39,22 +39,41 @@ module.exports = async function(req, res) {
         try {
             verifyData = await verifyReq.json();
         } catch (e) {
-            return res.status(500).json({ error: "System Error: Unable to connect to master database." });
+            return res.status(500).json({ 
+                error: "System Error", 
+                message: "Unable to connect to master database." 
+            });
         }
 
-        if (verifyData.error) return res.status(403).json({ error: verifyData.error });
+        if (verifyData.error) {
+            // Ensure PHP errors also have a message field if they don't already
+            return res.status(403).json({ 
+                error: "Access Denied",
+                message: verifyData.error 
+            });
+        }
 
         // ---------------------------------------------------------
-        // THE BLANK QUERY INTERCEPTOR
+        // UPDATED BLANK QUERY INTERCEPTOR
         // ---------------------------------------------------------
         const qParam = verifyData.query_param || 'query';
         const mainQueryValue = extraParams[qParam] ? encodeURIComponent(extraParams[qParam]) : '';
 
-        // If the query value is completely empty, stop right here.
+        // If the query value is completely empty, stop right here and format a clean error.
         if (!mainQueryValue) {
-            return res.status(400).json({ 
-                error: `No ${qParam} found.` 
-            });
+            const errResponse = { 
+                error: "Missing Query Parameter",
+                message: `No value provided for '${qParam}'. Please include a valid query in the URL.`
+            };
+            
+            // Inject branding if available
+            if (verifyData.branding && Object.keys(verifyData.branding).length > 0) {
+                errResponse._provider_info = {
+                    developer: verifyData.branding.developer,
+                    official_channel: verifyData.branding.channel
+                };
+            }
+            return res.status(400).json(errResponse);
         }
         // ---------------------------------------------------------
 
@@ -81,7 +100,10 @@ module.exports = async function(req, res) {
         try {
             upstreamRes = await fetch(fetchUrl);
         } catch (e) {
-            return res.status(502).json({ error: "Upstream Error: Vendor connection timed out." });
+            return res.status(502).json({ 
+                error: "Upstream Error", 
+                message: "Vendor connection timed out." 
+            });
         }
         
         let data;
@@ -120,6 +142,9 @@ module.exports = async function(req, res) {
         return res.status(200).json(data);
 
     } catch (err) {
-        return res.status(500).json({ error: "Gateway Edge Error: Connection Failed." });
+        return res.status(500).json({ 
+            error: "Gateway Edge Error", 
+            message: "Connection Failed." 
+        });
     }
 }
