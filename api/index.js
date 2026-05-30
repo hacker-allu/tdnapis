@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function(req, res) {
     // Enable CORS so buyers can use your API in web browsers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -9,8 +9,8 @@ export default async function handler(req, res) {
 
     const { key, api, ...extraParams } = req.query;
 
-    // ⚠️ CHANGE THIS TO YOUR ACTUAL PHP HOSTING DOMAIN ⚠️
-    const PHP_BACKEND_URL = "https://your-php-domain.com/verify.php"; 
+    // Connected to your actual PHP Hosting Domain
+    const PHP_BACKEND_URL = "https://lifeatface.in/works/api/verify.php"; 
     const BRIDGE_SECRET = "LOFZ_SECRET_5588"; 
 
     if (!key || !api) {
